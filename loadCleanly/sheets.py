@@ -20,6 +20,10 @@ from time import time
 #WORD = re.compile("[\w\-]+\'[a-z]+|[A-Za-z]+\'[\w\-]+|[\w\-]+")
 WORD = re.compile("(([A-Za-z]\.)+)|([0-9]{1,2}:[0-9][0-9])|(([A-za-z]+\'){0,1}\w+(\-\w+){0,1}(\'[a-z]+){0,1})")
 EMAIL_OR_URL = re.compile("(\w|-)+@(\w|-)+\.(\w|-)+|http.+")
+ESCAPES = [re.compile(chr(char)) for char in range(1, 32)] # Start at 0??
+TWEET_SYMBOLS = ['RT','@','"',"\'","_",":"] # I really need stemming to handle contractions
+# EOL = ["\\n","\n"]
+# EOL = [re.compile(char) for char in EOL]
 
 thisdir = os.path.dirname(os.path.realpath(__file__))
 with open(os.path.join(thisdir,"stopwords.txt")) as handle:
@@ -276,8 +280,10 @@ def get_spreadsheet_rows(filepath, textcol, dedupe=False, format="text/csv"):
 
     return header, rows
 
-def write_csv(filepath, header, rows):
+def write_csv(filepath, header, rows,dedupe=False):
     """Write the header followed by rows to a csv file in filepath"""
+    if dedupe:
+        rows = remove_dups_garbage(rows, 0, True, False)
     with open(filepath, 'wb') as csvfile:
         # rewrite each line with commas and quotes
         normalcsv = csv.writer(csvfile, delimiter=',', quoting=csv.QUOTE_ALL)
@@ -316,6 +322,71 @@ def is_number(s):
         pass
 
     return False
+
+def remove_regex(text,regex_search):
+    if regex_search !=None:
+        beg = text[0:regex_search.start()]
+        end = text[(regex_search.end()+1):-1]
+        text = beg +" "+ end
+    return text
+
+def remove_escapes(text):
+    '''Remove any characters that start with escape-x'''
+    for esc in ESCAPES:
+        res = esc.search(text)
+        text = remove_regex(text,res)
+    return text
+
+def remove_url(text):
+    '''urls can be useless for a lot of reasons, especially training models.'''
+    # urlregex = re.compile("""/^(https?:\/\/)?([\da-z\.-]+)\.([a-z\.]{2,6})([\/\w \.-]*)*\/?$/""", flags=re.IGNORECASE)
+    res = EMAIL_OR_URL.search(text)
+    text = remove_regex(text,res)
+    return text
+
+def remove_double_slashes(text):
+    '''
+    Find the double slash with a u character and remove it and the next 5 characters if applicable
+    I would like to include these characters as new characters if possible, perhaps one day I'll map them to unique words.
+    '''
+    slash_found = True
+    while slash_found:
+        xx = text.find('\\')
+        if xx!=-1:
+            beg = text[0:xx]
+            end = text[(xx+1):len(text)]
+            if text[xx+1]=='u':
+                end = text[(xx+6):len(text)]
+            text = beg +" "+ end
+        else:
+            slash_found = False
+    return text
+
+def remove_tweet_symbols(text):
+
+    symbol_found = True
+    while symbol_found:
+        symbol_found = False
+        for symb in TWEET_SYMBOLS:
+            xx = text.find(symb)
+            if xx!=-1:
+                symbol_found = True
+                beg = text[0:xx]
+                end = text[(xx+len(symb)):len(text)]
+                text = beg+end
+    return text
+
+def clean_tweets(rows,textcol):
+    '''Remove \n, urls, RT, '''
+    for k,row in enumerate(rows):
+        new_row = row[textcol]
+        new_row = remove_url(new_row)
+        new_row = remove_escapes(new_row)
+        new_row = remove_double_slashes(new_row)
+        new_row = remove_tweet_symbols(new_row)
+        rows[k][textcol] = new_row
+
+    return rows
 
 def base26to10(b26):
     """Convert Excel Alphabet Columns to Numeric"""
