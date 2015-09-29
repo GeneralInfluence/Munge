@@ -13,6 +13,7 @@ import ujson
 import codecs
 import numpy as np
 import magic
+import enchant
 from time import time
 
 
@@ -24,6 +25,7 @@ ESCAPES = [re.compile(chr(char)) for char in range(1, 32)] # Start at 0??
 TWEET_SYMBOLS = ['RT','@','"',"\'","_",":"] # I really need stemming to handle contractions
 # EOL = ["\\n","\n"]
 # EOL = [re.compile(char) for char in EOL]
+DICT = enchant.Dict("en_US")
 
 thisdir = os.path.dirname(os.path.realpath(__file__))
 with open(os.path.join(thisdir,"stopwords.txt")) as handle:
@@ -376,6 +378,15 @@ def remove_tweet_symbols(text):
                 text = beg+end
     return text
 
+def correct_spelling(text):
+    '''If correct_spelling isn't descriptive enough...'''
+    if not DICT.check(text):
+        suggestions = DICT.suggest(text)
+        if len(suggestions)==0 or suggestions==None or suggestions[0]==None:
+            return text # Need to be able to add twitter handles to the tokenization dictionary
+        return suggestions[0] # The first suggestion has the highest probability.
+    return text
+
 def clean_tweets(rows,textcol):
     '''Remove \n, urls, RT, '''
     for k,row in enumerate(rows):
@@ -384,6 +395,7 @@ def clean_tweets(rows,textcol):
         new_row = remove_escapes(new_row)
         new_row = remove_double_slashes(new_row)
         new_row = remove_tweet_symbols(new_row)
+        # new_row = correct_spelling(new_row)
         rows[k][textcol] = new_row
 
     return rows
